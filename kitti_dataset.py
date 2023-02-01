@@ -9,6 +9,10 @@ from PIL import Image
 import torchvision.transforms as transforms
 
 class KittiDataset(data.Dataset):
+
+    class_names = ['Pedestrian', 'Car', 'Cyclist']
+    class_numbers = {'Pedestrian': 0, 'Car': 1, 'Cyclist':2}
+    
     def __init__(self, root_dir='D:\3D-Object-Detection-for-Autonomous-Driving\dataset\kitti',set='train', transform=transforms.Compose([
         transforms.Resize((375, 1242)),
         transforms.ToTensor(),
