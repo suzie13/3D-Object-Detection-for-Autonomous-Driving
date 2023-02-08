@@ -1,45 +1,51 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+import torch.utils.data as data
 from torch.autograd import Variable
-from yolo import YOLO
+from yolo import COMPLEXYOLO
 from kitti_dataset import KittiDataset
-# from torchvision import transforms
+from region_loss import RegionLoss
 
 
+batch_size=12
 
-# Load the Kitti dataset
-kitti_dataset = KittiDataset()
-data_loader = DataLoader(kitti_dataset, batch_size=8, shuffle=True)
+# dataset
+dataset=KittiDataset(root='D:/3D-Object-Detection-for-Autonomous-Driving/dataset/kitti',set='train')
+data_loader = data.DataLoader(dataset, batch_size, shuffle=True)
 
-# Initialize the YOLO model
-model = YOLO()
-# model.cuda()
+model = COMPLEXYOLO()
+model.cuda()
 
-# Define the loss function and optimizer
-criterion = nn.CrossEntropyLoss()
-# optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 # define optimizer
-optimizer = optim.Adam(model.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.Adam(model.parameters())
 
-# Train the model
-for epoch in range(100):
-    running_loss = 0.0
-    for i, data in enumerate(data_loader, 0):
-        #check here 
-        inputs, labels = data
-        inputs = Variable(inputs)
-        labels = Variable(labels)
+# define loss function
+region_loss = RegionLoss(num_classes=8)
 
-        optimizer.zero_grad()
 
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    print('[Epoch %d] loss: %.3f' % (epoch + 1, running_loss / len(data_loader)))
-    torch.save(model.state_dict(), 'complexYOLO_%d.pth' % (epoch + 1))
+
+for epoch in range(200):
+
+    for batch_idx, (rgb_map, target) in enumerate(data_loader):          
+          optimizer.zero_grad()
+         #  print(rgb_map.shape)
+          rgb_map = rgb_map.view(rgb_map.data.size(0),rgb_map.data.size(3),rgb_map.data.size(1),rgb_map.data.size(2))
+         #  print(rgb_map.shape)
+       #    print(output.shape)
+          output = model(rgb_map.float().cuda())
+         #  print(output.shape)
+         #  print(target.shape)
+         #  print(".....................")
+
+          loss = region_loss(output,target)
+
+          loss.backward()
+          optimizer.step()
+
+    torch.save(model, "COMPLEXYOLO_epoch"+str(epoch))
+    # torch.save(model, "CY_epoch"+str(epoch))
+#    torch.save(model.state_dict(), 'epoch_%d.pth' % (epoch + 1))
+    
 
 print('Finished Training')
