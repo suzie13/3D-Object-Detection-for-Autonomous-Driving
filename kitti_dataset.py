@@ -1,43 +1,59 @@
+from __future__ import division
 import os
+import os.path
 import torch
-import torch.nn as nn
+import numpy as np
+import cv2
+import math
 
-# from torch.utils.data import Dataset
-import torch.utils.data as data
 
-from PIL import Image
-import torchvision.transforms as transforms
+from utils import *
 
-class KittiDataset(data.Dataset):
 
-    class_names = ['Pedestrian', 'Car', 'Cyclist']
-    class_numbers = {'Pedestrian': 0, 'Car': 1, 'Cyclist':2}
-    
-    def __init__(self, root_dir='D:\3D-Object-Detection-for-Autonomous-Driving\dataset\kitti',set='train', transform=transforms.Compose([
-        transforms.Resize((375, 1242)),
-        transforms.ToTensor(),
-        # transforms.Resize((256,256)),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-])):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.images_dir = os.path.join(root_dir, 'training/image_2')
-        self.labels_dir = os.path.join(root_dir, 'training/label_2')
-        self.images = [f for f in os.listdir(self.images_dir) if f.endswith('.png')]
+class KittiDataset(torch.utils.data.Dataset):
+
+    def __init__(self, root='D:/3D-Object-Detection-for-Autonomous-Driving/dataset/kitti',set='train',type='velodyne_train'):
+        self.type = type
+        self.root = root
+        self.data_path = os.path.join(root, 'training')
+        self.lidar_path = os.path.join(self.data_path, "velodyne/")
+        self.image_path = os.path.join(self.data_path, "image_2/")
+        self.calib_path = os.path.join(self.data_path, "calib/")
+        self.label_path = os.path.join(self.data_path, "label_2/")
+
+        with open(os.path.join(self.data_path, '%s.txt' % set)) as f:
+            self.file_list = f.read().splitlines()
+
+
+    def __getitem__(self, i):
+
+        lidar_file = self.lidar_path + '/' + self.file_list[i] + '.bin'
+        calib_file = self.calib_path + '/' + self.file_list[i] + '.txt'
+        label_file = self.label_path + '/' + self.file_list[i] + '.txt'
+        image_file = self.image_path + '/' + self.file_list[i] + '.png'
+        #print(self.file_list[i])
+
+        if self.type == 'velodyne_train':
+
+            calib = load_kitti_calib(calib_file)
+
+            
+            target = get_target(label_file,calib['Tr_velo2cam'])
+            #print(target)
+            #print(self.file_list[i])
+            
+            ################################
+            # load point cloud data
+            a = np.fromfile(lidar_file, dtype=np.float32).reshape(-1, 4)
+
+            b = removePoints(a,bc)
+
+            data = makeBVFeature(b, 40/512)   # (512, 1024, 3)
+
+            return data , target
+
 
     def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, idx):
-        image_path = os.path.join(self.images_dir, self.images[idx])
-        label_path = os.path.join(self.labels_dir, self.images[idx].split('.')[0] + '.txt')
-
-        image = Image.open(image_path)
-        if self.transform:
-            image = self.transform(image)
+        return len(self.file_list)
 
 
-        with open(label_path, 'r') as f:
-            labels = f.readlines()
-
-        return image, labels
