@@ -34,11 +34,8 @@ class KittiDataset(torch.utils.data.Dataset):
         #print(self.file_list[i])
 
         if self.type == 'velodyne_train':
-
-            calib = load_kitti_calib(calib_file)
-
             
-            target = get_target(label_file,calib['Tr_velo2cam'])
+            target = get_target(label_file,calib_file)
             #print(target)
             #print(self.file_list[i])
             
@@ -48,7 +45,7 @@ class KittiDataset(torch.utils.data.Dataset):
 
             b = removePoints(a,bc)
 
-            data = makeBVFeature(b, 40/512)   # (512, 1024, 3)
+            data = makeBVFeature(b, bc, 40/512)   # (512, 1024, 3)
 
             return data , target
 

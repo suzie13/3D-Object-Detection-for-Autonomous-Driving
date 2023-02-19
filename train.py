@@ -21,7 +21,7 @@ model.cuda()
 optimizer = optim.Adam(model.parameters())
 
 # define loss function
-region_loss = RegionLoss(num_classes=8)
+region_loss = RegionLoss()
 
 
 
