@@ -101,3 +101,32 @@ def camcoord_lidarcoord(boxes, V2C=None, R0=None, P2=None):
     result = np.array(result).reshape(-1, 7)
     return result
 
+
+
+def lidarcoord_camcoord(boxes,V2C=None, R0=None, P2=None):
+    result = []
+    for box in boxes:
+        x, y, z, h, w, l, rz = box
+        (x, y, z), h, w, l, ry = lidarsensor_camsensor(x, y, z,V2C=V2C, R0=R0, P2=P2), h, w, l, -rz - np.pi/2
+        result.append([x, y, z, h, w, l, ry])
+    result = np.array(result).reshape(-1, 7)
+    return result
+
+def cam_lidar_bbox(box, V2C=None, R0=None, P2=None):
+    result = []
+    for b in box:
+       x, y, z, h, w, l, ry = b
+       (x, y, z), h, w, l, rz = camsensor_lidarsensor(x, y, z,V2C=V2C, R0=R0, P2=P2), h, w, l, -ry - np.pi/2
+       result.append([x, y, z, h, w, l, rz])
+    result = np.array(result).reshape(-1, 7)
+    return result
+
+def lidar_camera_bbox(box,V2C=None, R0=None, P2=None):
+	result = []
+	for b in box:
+		x, y, z, h, w, l, rz = b
+		(x, y, z), h, w, l, ry = lidarsensor_camsensor(x, y, z,V2C=V2C, R0=R0, P2=P2), h, w, l, -rz - np.pi/2
+		result.append([x, y, z, h, w, l, ry])
+	result = np.array(result).reshape(-1, 7)
+	return result
+
