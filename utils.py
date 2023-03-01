@@ -12,6 +12,9 @@ class_list = ['Car', 'Van' , 'Truck' , 'Pedestrian' , 'Person_sitting' , 'Cyclis
 bc={}
 bc['minX'] = 0; bc['maxX'] = 50; bc['minY'] = -25; bc['maxY'] = 25; bc['minZ'] = -2.7; bc['maxZ'] = 1.3
 
+R0_inv = np.linalg.inv(R0)
+Tr_velo_to_cam_inv = np.linalg.inv(Tr_velo_to_cam)
+P2_inv = np.linalg.pinv(P2)
 
 def removePoints(PointCloud, BoundaryCond):
     
