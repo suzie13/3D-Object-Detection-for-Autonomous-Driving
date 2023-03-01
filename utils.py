@@ -61,3 +61,15 @@ def makeBVFeature(PointCloud_, BoundaryCond, Discretization):
     RGB_Map[0, :, :] = intensityMap[:608, :608]  #b_map
 
     return RGB_Map
+
+
+def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
+	p = np.array([x, y, z, 1])
+	if V2C is None or R0 is None:
+		p = np.matmul(Tr_velo_to_cam, p)
+		p = np.matmul(R0, p)
+	else:
+		p = np.matmul(V2C, p)
+		p = np.matmul(R0, p)
+	p = p[0:3]
+	return tuple(p)
