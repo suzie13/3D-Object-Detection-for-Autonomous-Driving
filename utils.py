@@ -73,3 +73,21 @@ def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
 		p = np.matmul(R0, p)
 	p = p[0:3]
 	return tuple(p)
+
+def camera_to_lidar(x, y, z, V2C=None,R0=None,P2=None):
+	val = np.array([x, y, z, 1])
+	if V2C is None or R0 is None:
+		val = np.matmul(R0_inv, val)
+		val = np.matmul(Tr_velo_to_cam_inv, val)
+	else:
+		R0_i = np.zeros((4,4))
+		R0_i[:3,:3] = R0
+		R0_i[3,3] = 1
+		val = np.matmul(np.linalg.inv(R0_i), val)
+		inv = np.zeros_like(V2C)
+		inv[0:3,0:3] = np.transpose(V2C[0:3,0:3])
+		inv[0:3,3] = np.dot(-np.transpose(V2C[0:3,0:3]), V2C[0:3,3])
+		val = np.matmul(inv, val)
+	val = val[0:3]
+	val = tuple(val)
+	return val
