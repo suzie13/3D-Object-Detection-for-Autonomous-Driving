@@ -74,7 +74,7 @@ def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
 	p = p[0:3]
 	return tuple(p)
 
-def camera_to_lidar(x, y, z, V2C=None,R0=None,P2=None):
+def camsensor_lidarsensor(x, y, z, V2C=None,R0=None,P2=None):
 	val = np.array([x, y, z, 1])
 	if V2C is None or R0 is None:
 		val = np.matmul(R0_inv, val)
@@ -91,3 +91,13 @@ def camera_to_lidar(x, y, z, V2C=None,R0=None,P2=None):
 	val = val[0:3]
 	val = tuple(val)
 	return val
+
+def camcoord_lidarcoord(boxes, V2C=None, R0=None, P2=None):
+    result = []
+    for box in boxes:
+        x, y, z, h, w, l, ry = box
+        (x, y, z), h, w, l, rz = camsensor_lidarsensor(x, y, z,V2C=V2C, R0=R0, P2=P2), h, w, l, -ry - np.pi/2
+        result.append([x, y, z, h, w, l, rz])
+    result = np.array(result).reshape(-1, 7)
+    return result
+
