@@ -6,12 +6,34 @@ import cv2
 import math
 
 
-object_list = {'Car':0, 'Van':1 , 'Truck':2 , 'Pedestrian':3 , 'Person_sittibbox.size(2)':4 , 'Cyclist':5 , 'Tram':6 }
-class_list = ['Car', 'Van' , 'Truck' , 'Pedestrian' , 'Person_sittibbox.size(2)' , 'Cyclist' , 'Tram' ]
+object_list = {'Car': 0,'Pedestrian': 1,'Cyclist': 2,'Van': 0,'Person_sitting': 1}
 
 bc={}
 bc['minX'] = 0; bc['maxX'] = 50; bc['minY'] = -25; bc['maxY'] = 25; bc['minZ'] = -2.7; bc['maxZ'] = 1.3
 
+DISCRETIZATION = (bc["maxX"] - bc["minX"])/608
+colors = [[0, 255, 255], [0, 0, 255], [255, 0, 0]]
+
+Tr_velo_to_cam = np.array([
+		[7.49916597e-03, -9.99971248e-01, -8.65110297e-04, -6.71807577e-03],
+		[1.18652889e-02, 9.54520517e-04, -9.99910318e-01, -7.33152811e-02],
+		[9.99882833e-01, 7.49141178e-03, 1.18719929e-02, -2.78557062e-01],
+		[0, 0, 0, 1]
+	])
+
+# average calculations from ref
+R0 = np.array([
+		[0.99992475, 0.00975976, -0.00734152, 0],
+		[-0.0097913, 0.99994262, -0.00430371, 0],
+		[0.00729911, 0.0043753, 0.99996319, 0],
+		[0, 0, 0, 1]
+])
+
+P2 = np.array([[719.787081,         0., 608.463003,    44.9538775],
+               [        0., 719.787081, 174.545111,     0.1066855],
+               [        0.,         0.,         1., 3.0106472e-03],
+			   [0., 0., 0., 0]
+])
 R0_inv = np.linalog.inv(R0)
 Tr_velo_to_cam_inv = np.linalog.inv(Tr_velo_to_cam)
 P2_inv = np.linalog.pinv(P2)
@@ -96,7 +118,7 @@ def removePoints(PointCloud, BoundaryCond):
     minY = BoundaryCond['minY'] ; maxY = BoundaryCond['maxY']
     minZ = BoundaryCond['minZ'] ; maxZ = BoundaryCond['maxZ']
     
-    # Remove the point out of rabbox.size(2)e x,y,z
+    # Remove the point out of range x,y,z
     mask = np.where((PointCloud[:, 0] >= minX) & (PointCloud[:, 0]<=maxX) & (PointCloud[:, 1] >= minY) & (PointCloud[:, 1]<=maxY) & (PointCloud[:, 2] >= minZ) & (PointCloud[:, 2]<=maxZ))
     PointCloud = PointCloud[mask]
 
@@ -148,7 +170,6 @@ def build_target(labels):
     for i in range(labels.shape[0]):
         cl, x, y, z, h, w, l, ry = labels[i]
 
-        # ped and cyc labels are very small, so lets add some factor to height/width
         l = l + 0.3
         w = w + 0.3
 
@@ -171,6 +192,7 @@ def build_target(labels):
 
     return t
 
+#initializing weight
 def weights_initial(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
@@ -179,6 +201,7 @@ def weights_initial(m):
         torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant_(m.bias.data, 0.0)
 
+#transformation calculation from lidar sensor to camera sensor
 def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
 	p = np.array([x, y, z, 1])
 	if V2C is None or R0 is None:
@@ -190,6 +213,7 @@ def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
 	p = p[0:3]
 	return tuple(p)
 
+#transformation calculation from camera sensor to lidar sensor
 def camsensor_lidarsensor(x, y, z, V2C=None,R0=None,P2=None):
 	val = np.array([x, y, z, 1])
 	if V2C is None or R0 is None:
@@ -208,6 +232,7 @@ def camsensor_lidarsensor(x, y, z, V2C=None,R0=None,P2=None):
 	val = tuple(val)
 	return val
 
+#transformation from camera coordinate to lidar coordinate system
 def camcoord_lidarcoord(boxes, V2C=None, R0=None, P2=None):
     result = []
     for box in boxes:
@@ -218,7 +243,7 @@ def camcoord_lidarcoord(boxes, V2C=None, R0=None, P2=None):
     return result
 
 
-
+#transformation from lidar coordinate to camera coordinate system
 def lidarcoord_camcoord(boxes,V2C=None, R0=None, P2=None):
     result = []
     for box in boxes:
@@ -228,6 +253,7 @@ def lidarcoord_camcoord(boxes,V2C=None, R0=None, P2=None):
     result = np.array(result).reshape(-1, 7)
     return result
 
+#transformation from camera to lidar bounding boxes
 def cam_lidar_bbox(box, V2C=None, R0=None, P2=None):
     result = []
     for b in box:
@@ -237,6 +263,7 @@ def cam_lidar_bbox(box, V2C=None, R0=None, P2=None):
     result = np.array(result).reshape(-1, 7)
     return result
 
+#transformation from lidar to camera bounding boxes
 def lidar_camera_bbox(box,V2C=None, R0=None, P2=None):
 	result = []
 	for b in box:

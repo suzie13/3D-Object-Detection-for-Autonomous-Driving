@@ -38,6 +38,21 @@ def draw_lidar(pc, color=None, fig1=None, bgcolor=(0,0,0), pts_scale=1, pts_mode
     mlab.plot3d([x_min, x_max], [y_min, y_max], [0,0], color=(0.5,0.5,0.5), tube_radius=0.1, line_width=1, figure=fig1)
     mlab.plot3d([x_min, x_max], [y_max, y_max], [0,0], color=(0.5,0.5,0.5), tube_radius=0.1, line_width=1, figure=fig1)
     
-    #mlab.orientation_axes()
     mlab.view(azimuth=180, elevation=70, focalpoint=[ 12.0909996 , -1.04700089, -2.03249991], distance=60.0, figure=fig1)
     return fig1
+
+def rescale_bbox(bbox, cur_dim, initial_shape): #
+    init_h, init_w = initial_shape
+    # padding values
+    pad_x = max(init_h - init_w, 0) * (cur_dim / max(initial_shape))
+    pad_y = max(init_w - init_h, 0) * (cur_dim / max(initial_shape))
+    # new Image height and width
+    h = cur_dim - pad_y
+    w = cur_dim - pad_x
+    # Rescale bbox to initial image shape
+    bbox[:, 0] = ((bbox[:, 0] - pad_x // 2) / w) * init_w
+    bbox[:, 1] = ((bbox[:, 1] - pad_y // 2) / h) * init_h
+    bbox[:, 2] = ((bbox[:, 2] - pad_x // 2) / w) * init_w
+    bbox[:, 3] = ((bbox[:, 3] - pad_y // 2) / h) * init_h
+
+    return bbox
