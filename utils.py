@@ -12,9 +12,9 @@ class_list = ['Car', 'Van' , 'Truck' , 'Pedestrian' , 'Person_sittibbox.size(2)'
 bc={}
 bc['minX'] = 0; bc['maxX'] = 50; bc['minY'] = -25; bc['maxY'] = 25; bc['minZ'] = -2.7; bc['maxZ'] = 1.3
 
-R0_inv = np.libbox.shape[0]lg.inv(R0)
-Tr_velo_to_cam_inv = np.libbox.shape[0]lg.inv(Tr_velo_to_cam)
-P2_inv = np.libbox.shape[0]lg.pinv(P2)
+R0_inv = np.linalog.inv(R0)
+Tr_velo_to_cam_inv = np.linalog.inv(Tr_velo_to_cam)
+P2_inv = np.linalog.pinv(P2)
 
 
 
@@ -139,6 +139,37 @@ def makeBVFeature(PointCloud_, BoundaryCond, Discretization):
 
     return RGB_Map
 
+
+def build_target(labels):
+    idx = 0
+    bc = {"minX": 0,"maxX": 50,"minY": -25,"maxY": 25,"minZ": -2.73,"maxZ": 1.27}
+    t = np.zeros([50, 7], dtype=np.float32)
+    
+    for i in range(labels.shape[0]):
+        cl, x, y, z, h, w, l, ry = labels[i]
+
+        # ped and cyc labels are very small, so lets add some factor to height/width
+        l = l + 0.3
+        w = w + 0.3
+
+        ry = np.pi * 2 - ry
+        if (x > bc["minX"]) and (x < bc["maxX"]) and (y > bc["minY"]) and (y < bc["maxY"]):
+            y1 = (y - bc["minY"])/(bc["maxY"] - bc["minY"]) 
+            x1 = (x - bc["minX"])/(bc["maxX"] - bc["minX"]) 
+            w1 = w/(bc["maxY"] - bc["minY"])
+            l1 = l/(bc["maxX"] - bc["minX"])
+
+            t[idx][0] = cl
+            t[idx][1] = y1 
+            t[idx][2] = x1
+            t[idx][3] = w1
+            t[idx][4] = l1
+            t[idx][5] = math.sin(float(ry))
+            t[idx][6] = math.cos(float(ry))
+
+            idx = idx+1
+
+    return t
 
 def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
 	p = np.array([x, y, z, 1])
