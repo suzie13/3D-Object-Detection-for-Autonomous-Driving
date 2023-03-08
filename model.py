@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import numpy as np
 import math
 
-from utils.utils import *
+from utils import *
 
 def create_modules(config):
 
@@ -62,7 +62,6 @@ def create_modules(config):
             layer = Layers(anchors, n_classes, img_size)
             modules.add_module(f"yolo_{i}", layer)
 
-        # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
 
@@ -85,7 +84,7 @@ class Layers(nn.Module):
         self.noobj_scale = 100
         self.metrics = {}
         self.img_dim = img_dim
-        self.grid_size = 0  # grid size
+        self.grid_size = 0  
 
     def forward(self, x, targets=None, img_dim=None):
 
@@ -109,10 +108,9 @@ class Layers(nn.Module):
         pred_conf = torch.sigmoid(prediction[..., 6])  # predicted comfidence
         pred_cls = torch.sigmoid(prediction[..., 7:])  # class confidence
 
-        # If grid size does not match current we compute new offsets
+        # compute anchor offsets
         if grid_size != self.grid_size:
-            # self.compute_grid_offsets(grid_size, cuda=x.is_cuda)
-            # compute_grid_offsets(self, grid_size, cuda=True):
+
             self.grid_size = grid_size
             g = self.grid_size
             FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
@@ -142,6 +140,65 @@ class Layers(nn.Module):
             ),
             -1,
         )
+        if targets is None:
+            return output, 0
+        else:
+            iou_scores, class_mask, mask, nomask, tx, ty, tw, th, tim, tre, tcls, tconf = build_targets(
+                pred_boxes=bboxes,
+                pred_cls=pred_cls,
+                target=targets,
+                anchors=self.scaled_anchors,
+                ignore_thres=self.ignore_thres,
+            )
+
+            loss_x = self.mse_loss(x[mask], tx[mask])
+            loss_y = self.mse_loss(y[mask], ty[mask])
+            loss_w = self.mse_loss(w[mask], tw[mask])
+            loss_h = self.mse_loss(h[mask], th[mask])
+            loss_im = self.mse_loss(imagin[mask], tim[mask])
+            loss_re = self.mse_loss(real[mask], tre[mask])
+            loss_e = loss_im + loss_re
+            loss_conf = self.bce_loss(pred_conf[mask], tconf[mask])
+            loss_noobj = self.bce_loss(pred_conf[nomask], tconf[nomask])
+            loss_conf = self.obj_scale * loss_conf + self.noobj_scale * loss_noobj
+            loss_cls = self.bce_loss(pred_cls[mask], tcls[mask])
+            total_loss = loss_x + loss_y + loss_w + loss_h + loss_e + loss_conf + loss_cls
+
+
+            class_scores = pred_conf * class_mask
+            cls_acc = 100 * torch.sum(class_scores[mask]) / torch.sum(class_mask[mask])
+
+            conf_obj = torch.mean(pred_conf[mask])
+            conf_noobj = torch.mean(pred_conf[nomask])
+
+            conf50 = (pred_conf > 0.5)
+            iou50 = (iou_scores > 0.5)
+            iou75 = (iou_scores > 0.75)
+            detected_mask = (conf50 * class_mask * tconf).bool()
+            precision = torch.sum(iou50.float() * detected_mask) / (torch.sum(conf50) + 1e-16)
+            recall50 = torch.sum(iou50.float() * detected_mask) / (torch.sum(mask) + 1e-16)
+            recall75 = torch.sum(iou75.float() * detected_mask) / (torch.sum(mask) + 1e-16)
+
+            self.metrics = {
+                "loss": (total_loss).detach().cpu().item(),
+                "x": (loss_x).detach().cpu().item(),
+                "y": (loss_y).detach().cpu().item(),
+                "w": (loss_w).detach().cpu().item(),
+                "h": (loss_h).detach().cpu().item(),
+                "im": (loss_im).detach().cpu().item(),
+                "re": (loss_re).detach().cpu().item(),
+                "conf": (loss_conf).detach().cpu().item(),
+                "cls": (loss_cls).detach().cpu().item(),
+                "cls_acc": (cls_acc).detach().cpu().item(),
+                "recall50": (recall50).detach().cpu().item(),
+                "recall75": (recall75).detach().cpu().item(),
+                "precision": (precision).detach().cpu().item(),
+                "conf_obj": (conf_obj).detach().cpu().item(),
+                "conf_noobj": (conf_noobj).detach().cpu().item(),
+                "grid_size": grid_size,
+            }
+
+            return output, total_loss
 
 
 class COMPLEXYOLO(nn.Module):
@@ -151,7 +208,7 @@ class COMPLEXYOLO(nn.Module):
 
         file = open(config_path, 'r')
         lines = file.read().split('\n')
-        lines = [x for x in lines if x and not x.startswith('#')]
+        lines = [x for x in lines if x and not x.startswith('#')] #making sure to not include comments of the config file
         lines = [x.rstrip().lstrip() for x in lines] 
         config = []
         for line in lines:
