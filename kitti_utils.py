@@ -67,36 +67,84 @@ class Calibrate(object):
         self.b_x = self.proj[0,3]/(-self.f_u)
         self.b_y = self.proj[1,3]/(-self.f_v)
 
+    def projection_velo(self, points_3d_rect):
+
+        points_3d = (np.dot(np.linalg.inv(self.R0), points_3d_rect.T)).T
+        points_3d= np.hstack((points_3d, np.ones((points_3d.shape[0], 1), dtype=np.float32)))
+        points_3d = np.dot(points_3d, self.cam_vel.T)
+        return points_3d
+
+    def corners3d_bboxes(self, corners3d):
+        sample_num = corners3d.shape[0]
+        corners3d_hom = np.concatenate((corners3d, np.ones((sample_num, 8, 1))), axis=2)  # (N, 8, 4)
+
+        points = np.matmul(corners3d_hom, self.P.T)  # (N, 8, 3)
+
+        x, y = points[:, :, 0] / points[:, :, 2], points[:, :, 1] / points[:, :, 2]
+        x1, y1 = np.min(x, axis=1), np.min(y, axis=1)
+        x2, y2 = np.max(x, axis=1), np.max(y, axis=1)
+
+        boxes = np.concatenate((x1.reshape(-1, 1), y1.reshape(-1, 1), x2.reshape(-1, 1), y2.reshape(-1, 1)), axis=1)
+        boxes_corner = np.concatenate((x.reshape(-1, 8, 1), y.reshape(-1, 8, 1)), axis=2)
+
+        return boxes, boxes_corner
+
     
-    def compute_box_3d(obj, proj):
+def compute_box_3d(obj, proj):
 
-        R_yaw = np.array([[np.cos(obj.ry),  0,  np.sin(obj.ry)],
-                        [0,  1,  0],
-                        [-(np.sin(obj.ry)), 0,  np.cos(obj.ry)]])
+    Ry = np.array([[np.cos(obj.ry),  0,  np.sin(obj.ry)],
+                    [0,  1,  0],
+                    [-(np.sin(obj.ry)), 0,  np.cos(obj.ry)]])
 
-        # 3d bounding box dimensions
-        l = obj.l
-        w = obj.w
-        h = obj.h
+    # 3d bounding box dimensions
+    l = obj.l
+    w = obj.w
+    h = obj.h
+    
+    # corners of bbox 3d
+    x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2]
+    y_corners = [0,0,0,0,-h,-h,-h,-h]
+    z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2]
         
-        # corners of bbox 3d
-        x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2]
-        y_corners = [0,0,0,0,-h,-h,-h,-h]
-        z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2]
-            
-        corn_3d = np.dot(R_yaw, np.vstack([x_corners,y_corners,z_corners]))
-        corn_3d[0,:] = corn_3d[0,:] + obj.t[0]
-        corn_3d[1,:] = corn_3d[1,:] + obj.t[1]
-        corn_3d[2,:] = corn_3d[2,:] + obj.t[2]
-        # 3d bounding box for objs in front of the camera
-        if np.any(corn_3d[2,:] < 0.1):
-            corn_2d = None
-            return corn_2d, corn_3d.T
-
-
-        pts_3d = np.hstack((corn_3d.T, np.ones(((corn_3d.T).shape[0],1))))
-        pts_2d = np.dot(pts_3d, proj.T)
-        pts_2d[:,0] /= pts_2d[:,2]
-        pts_2d[:,1] /= pts_2d[:,2]
-        corn_2d = pts_2d[:,0:2]
+    corn_3d = np.dot(Ry, np.vstack([x_corners,y_corners,z_corners]))
+    corn_3d[0,:] = corn_3d[0,:] + obj.t[0]
+    corn_3d[1,:] = corn_3d[1,:] + obj.t[1]
+    corn_3d[2,:] = corn_3d[2,:] + obj.t[2]
+    # 3d bounding box for objs in front of the camera
+    if np.any(corn_3d[2,:] < 0.1):
+        corn_2d = None
         return corn_2d, corn_3d.T
+
+
+    pts_3d = np.hstack((corn_3d.T, np.ones(((corn_3d.T).shape[0],1))))
+    pts_2d = np.dot(pts_3d, proj.T)
+    pts_2d[:,0] /= pts_2d[:,2]
+    pts_2d[:,1] /= pts_2d[:,2]
+    corn_2d = pts_2d[:,0:2]
+    return corn_2d, corn_3d.T
+
+def compute_orientation_3d(obj, proj):
+    Ry = np.array([[np.cos(obj.ry),  0,  np.sin(obj.ry)],
+                    [0,  1,  0],
+                    [-(np.sin(obj.ry)), 0,  np.cos(obj.ry)]])
+
+    # orientation in object coordinate system
+    orientation_3d = np.array([[0.0, obj.l],[0,0],[0,0]])
+    
+    # rotation
+    orientation_3d = np.dot(Ry, orientation_3d)
+    # translation
+    orientation_3d[0,:] = orientation_3d[0,:] + obj.t[0]
+    orientation_3d[1,:] = orientation_3d[1,:] + obj.t[1]
+    orientation_3d[2,:] = orientation_3d[2,:] + obj.t[2]
+    
+    if np.any(orientation_3d[2,:]<0.1):
+        orientation_2d = None
+        return orientation_2d, orientation_3d.T
+    
+    pts_3d_extend = np.hstack((orientation_3d.T, np.ones(((orientation_3d.T).shape[0],1))))
+    pts_2d = np.dot(pts_3d_extend, proj.T) # nx3
+    pts_2d[:,0] /= pts_2d[:,2]
+    pts_2d[:,1] /= pts_2d[:,2]
+    orientation_2d = pts_2d[:,0:2]
+    return orientation_2d, orientation_3d.T
