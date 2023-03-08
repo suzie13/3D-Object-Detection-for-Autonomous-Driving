@@ -1,7 +1,10 @@
 from __future__ import division
 
 from utils import *
-from model import KITTI
+from model import COMPLEXYOLO
+from kitti_dataset import *
+from utils import *
+from kitti_utils import *
 import torch
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
@@ -16,7 +19,7 @@ if __name__ == "__main__":
 
 
     model = COMPLEXYOLO("config/complex_yolov3.cfg", img_size=608).to(device)
-    model.apply(weights_init_normal)
+    model.apply(weights_initial)
 
     dataset = KITTI('data',split='train',mode='TRAIN',folder='training')
 
@@ -46,6 +49,6 @@ if __name__ == "__main__":
 
             model.seen += imgs.size(0)
 
-            torch.save(model.state_dict(), f"checkpoints/kkkkajjhjfy-%d.pth" % (epoch))
+            torch.save(model.state_dict(), f"checkpoints/fjhfy-%d.pth" % (epoch))
 
 
