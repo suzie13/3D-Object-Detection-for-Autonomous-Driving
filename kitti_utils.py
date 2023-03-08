@@ -66,3 +66,37 @@ class Calibrate(object):
         self.f_v = self.proj[1,1]
         self.b_x = self.proj[0,3]/(-self.f_u)
         self.b_y = self.proj[1,3]/(-self.f_v)
+
+    
+    def compute_box_3d(obj, proj):
+
+        R_yaw = np.array([[np.cos(obj.ry),  0,  np.sin(obj.ry)],
+                        [0,  1,  0],
+                        [-(np.sin(obj.ry)), 0,  np.cos(obj.ry)]])
+
+        # 3d bounding box dimensions
+        l = obj.l
+        w = obj.w
+        h = obj.h
+        
+        # corners of bbox 3d
+        x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2]
+        y_corners = [0,0,0,0,-h,-h,-h,-h]
+        z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2]
+            
+        corn_3d = np.dot(R_yaw, np.vstack([x_corners,y_corners,z_corners]))
+        corn_3d[0,:] = corn_3d[0,:] + obj.t[0]
+        corn_3d[1,:] = corn_3d[1,:] + obj.t[1]
+        corn_3d[2,:] = corn_3d[2,:] + obj.t[2]
+        # 3d bounding box for objs in front of the camera
+        if np.any(corn_3d[2,:] < 0.1):
+            corn_2d = None
+            return corn_2d, corn_3d.T
+
+
+        pts_3d = np.hstack((corn_3d.T, np.ones(((corn_3d.T).shape[0],1))))
+        pts_2d = np.dot(pts_3d, proj.T)
+        pts_2d[:,0] /= pts_2d[:,2]
+        pts_2d[:,1] /= pts_2d[:,2]
+        corn_2d = pts_2d[:,0:2]
+        return corn_2d, corn_3d.T
