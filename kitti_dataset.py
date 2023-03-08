@@ -54,8 +54,6 @@ class KittiDataset(torch_data.Dataset):
     def get_label(self, idx):
         label_file = os.path.join(self.label_path, '%06d.txt' % idx)
         print(label_file)
-        # assert os.path.exists(label_file)
-        # def read_label(label_filename):
         lines = [line.rstrip() for line in open(label_file)]
         objects = [Class_3d(line) for line in lines]
         return objects
