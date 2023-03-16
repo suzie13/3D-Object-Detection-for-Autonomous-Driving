@@ -1,18 +1,15 @@
 from __future__ import division
 import os
-import os.path
-import torch
 import numpy as np
-import glob
-import torch.utils.data as torch_data
-from kitti_utils import *
 import random
-
 from utils import *
 
 import torch
 import torch.nn.functional as F
 
+import glob
+import torch.utils.data as torch_data
+from kitti_utils import *
 
 class KittiDataset(torch_data.Dataset):
 
@@ -20,7 +17,7 @@ class KittiDataset(torch_data.Dataset):
         self.split = split
 
         is_test = self.split == 'test'
-        self.folder_name = os.path.join('data\KITTI\object', folder)
+        self.folder_name = os.path.join('dataset\KITTI\object', folder)
         self.lidar_path = os.path.join(self.folder_name, "velodyne")
 
         self.image_path = os.path.join(self.folder_name, "image_2")
@@ -30,14 +27,15 @@ class KittiDataset(torch_data.Dataset):
 
 
         if not is_test:
-            split_dir = os.path.join('data', 'KITTI', 'ImageSets', split+'.txt')
-            self.img_list = [x.strip() for x in open(split_dir).readlines()]
+            split_dir = os.path.join('dataset', 'KITTI', 'ImageSets', split+'.txt')
+            self.image_idx_list = [x.strip() for x in open(split_dir).readlines()]
         else:
             self.files = sorted(glob.glob("%s/*.bin" % self.lidar_path))
-            self.img_list = [os.path.split(x)[1].split(".")[0].strip() for x in self.files]
-            print(self.img_list[0])
+            self.image_idx_list = [os.path.split(x)[1].split(".")[0].strip() for x in self.files]
+            print(self.image_idx_list[0])
 
-        self.num_samples = len(self.img_list)
+        # self.num_samples = self.image_idx_list.__len__()
+        self.num_samples = len(self.image_idx_list)
         # self.num_samples = 300
         print(self.num_samples)
 
@@ -55,7 +53,7 @@ class KittiDataset(torch_data.Dataset):
         label_file = os.path.join(self.label_path, '%06d.txt' % idx)
         print(label_file)
         lines = [line.rstrip() for line in open(label_file)]
-        objects = [Class_3d(line) for line in lines]
+        objects = [Object3d(line) for line in lines]
         return objects
 
 
@@ -73,14 +71,14 @@ class KITTI(KittiDataset):
         self.mode = mode
 
         self.file_list = []
-        self.preprocess_training_data()
+        self.preprocess_yolo_training_data()
 
-    def preprocess_training_data(self):
+    def preprocess_yolo_training_data(self):
 
         for idx in range(0, self.num_samples):
         # for idx in range(0, 300):
-            file = int(self.img_list[idx])
-            # print(int(self.img_list[224]))
+            file = int(self.image_idx_list[idx])
+            # print(int(self.image_idx_list[224]))
             print(file)
             objects = self.get_label(file)
             calib = self.get_calib(file)
@@ -91,9 +89,9 @@ class KITTI(KittiDataset):
             valid_list = []
             for i in range(labels.shape[0]):
                 if int(labels[i, 0]) in object_list.values():
-                    x_range = [bc["minX"], bc["maxX"]]
-                    y_range = [bc["minY"], bc["maxY"]]
-                    z_range = [bc["minZ"], bc["maxZ"]]
+                    x_range = [boundary["minX"], boundary["maxX"]]
+                    y_range = [boundary["minY"], boundary["maxY"]]
+                    z_range = [boundary["minZ"], boundary["maxZ"]]
 
                     if (x_range[0] <= (labels[i, 1:4])[0] <= x_range[1]) and (y_range[0] <= (labels[i, 1:4])[1] <= y_range[1]) and \
                             (z_range[0] <= (labels[i, 1:4])[2] <= z_range[1]):
@@ -105,6 +103,7 @@ class KITTI(KittiDataset):
     def __getitem__(self, index):
         
         file = int(self.file_list[index])
+        # print(len(file))
 
         if self.mode in ['TRAIN', 'EVAL']:
             lidarData = self.get_lidar(file)    
@@ -114,10 +113,11 @@ class KITTI(KittiDataset):
             labels, noObjectLabels = bev_labels(objects)
     
             if not noObjectLabels:
-                labels[:, 1:] = cam_lidar_bbox(labels[:, 1:], calib.V2C, calib.R0, calib.P) 
+                labels[:, 1:] = cam_lidar_bbox(labels[:, 1:], calib.V2C, calib.R0, calib.P)
 
-            b = removePoints(lidarData, bc)
-            rgb_map = makeBVFeature(b, DISCRETIZATION, bc)
+
+            b = removePoints(lidarData, boundary)
+            rgb_map = makeBVFeature(b, DISCRETIZATION, boundary)
             target = build_target(labels)
 
             img_file = os.path.join(self.image_path, '%06d.png' % file)
@@ -132,12 +132,13 @@ class KITTI(KittiDataset):
                     targets[i, 1:] = torch.from_numpy(t)
             
             img = torch.from_numpy(rgb_map).type(torch.FloatTensor)
+
             return img_file, img, targets
 
         else:
             lidarData = self.get_lidar(file)
-            b = removePoints(lidarData, bc)
-            rgb_map = makeBVFeature(b, DISCRETIZATION, bc)
+            b = removePoints(lidarData, boundary)
+            rgb_map = makeBVFeature(b, DISCRETIZATION, boundary)
             img_file = os.path.join(self.image_path, '%06d.png' % file)
             return img_file, rgb_map
 
@@ -147,8 +148,10 @@ class KITTI(KittiDataset):
         for i, boxes in enumerate(targets):
             boxes[:, 0] = i
         targets = torch.cat(targets, 0)
-
         imgs = torch.stack([F.interpolate(img.unsqueeze(0), size=608, mode="nearest").squeeze(0) for img in imgs])
 
         self.batch_count += 1
         return paths, imgs, targets
+
+    def __len__(self):
+        return len(self.file_list)

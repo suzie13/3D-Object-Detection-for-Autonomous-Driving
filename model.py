@@ -51,29 +51,26 @@ def create_modules(config):
             modules.add_module(f"shortcut_{i}", nn.Identity())
 
         elif c["type"] == "yolo":
-            anchor_index = [int(x) for x in c["mask"].split(",")]
-            # get anchor
+            anchor_idxs = [int(x) for x in c["mask"].split(",")]
+            # Extract anchors
             anchors = [float(x) for x in c["anchors"].split(",")]
             anchors = [(anchors[i], anchors[i + 1], math.sin(anchors[i + 2]), math.cos(anchors[i + 2])) for i in range(0, len(anchors), 3)]
-            anchors = [anchors[i] for i in anchor_index]
-            n_classes = int(c["classes"])
+            anchors = [anchors[i] for i in anchor_idxs]
+            num_classes = int(c["classes"])
             img_size = int(hyperparams["height"])
             # Define detection layer
-            layer = Layers(anchors, n_classes, img_size)
-            modules.add_module(f"yolo_{i}", layer)
-
+            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            modules.add_module(f"yolo_{i}", yolo_layer)
+        # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
 
     return hyperparams, module_list
 
 
-
-class Layers(nn.Module):
-    """Detection layer"""
-
+class YOLOLayer(nn.Module):
     def __init__(self, anchors, num_classes, img_dim=416):
-        super(Layers, self).__init__()
+        super(YOLOLayer, self).__init__()
         self.anchors = anchors
         self.num_anchors = len(anchors)
         self.num_classes = num_classes
@@ -84,11 +81,12 @@ class Layers(nn.Module):
         self.noobj_scale = 100
         self.metrics = {}
         self.img_dim = img_dim
-        self.grid_size = 0  
+        self.grid_size = 0  # grid size
 
     def forward(self, x, targets=None, img_dim=None):
-
+        # Tensors for cuda support
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
+
         self.img_dim = img_dim
         num_samples = x.size(0)
         grid_size = x.size(2)
@@ -99,18 +97,18 @@ class Layers(nn.Module):
             .contiguous()
         )
 
-        x = torch.sigmoid(prediction[..., 0])
-        y = torch.sigmoid(prediction[..., 1])
-        w = prediction[..., 2]
-        h = prediction[..., 3]
-        imagin = prediction[..., 4]
-        real = prediction[..., 5] 
-        pred_conf = torch.sigmoid(prediction[..., 6])  # predicted comfidence
-        pred_cls = torch.sigmoid(prediction[..., 7:])  # class confidence
+        # Get outputs
+        x = torch.sigmoid(prediction[..., 0])  # Center x
+        y = torch.sigmoid(prediction[..., 1])  # Center y
+        w = prediction[..., 2]  # Width
+        h = prediction[..., 3]  # Height
+        im = prediction[..., 4]  # angle imaginary part
+        re = prediction[..., 5]  # angle real part
+        pred_conf = torch.sigmoid(prediction[..., 6])  # Conf
+        pred_cls = torch.sigmoid(prediction[..., 7:])  # Cls pred.
 
-        # compute anchor offsets
+        # If grid size does not match current we compute new offsets
         if grid_size != self.grid_size:
-
             self.grid_size = grid_size
             g = self.grid_size
             FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
@@ -123,61 +121,77 @@ class Layers(nn.Module):
             self.anchor_h = self.scaled_anchors[:, 1:2].view((1, self.num_anchors, 1, 1))
 
         # Add offset and scale with anchors
-        bboxes = FloatTensor(prediction[..., :6].shape)
-        bboxes[..., 0] = x.data + self.grid_x
-        bboxes[..., 1] = y.data + self.grid_y
-        bboxes[..., 2] = torch.exp(w.data) * self.anchor_w
-        bboxes[..., 3] = torch.exp(h.data) * self.anchor_h
-        bboxes[..., 4] = imagin
-        bboxes[..., 5] = real
+        pred_boxes = FloatTensor(prediction[..., :6].shape)
+        pred_boxes[..., 0] = x.data + self.grid_x
+        pred_boxes[..., 1] = y.data + self.grid_y
+        pred_boxes[..., 2] = torch.exp(w.data) * self.anchor_w
+        pred_boxes[..., 3] = torch.exp(h.data) * self.anchor_h
+        pred_boxes[..., 4] = im
+        pred_boxes[..., 5] = re
 
         output = torch.cat(
             (
-                bboxes[..., :4].view(num_samples, -1, 4) * self.stride,
-                bboxes[..., 4:].view(num_samples, -1, 2),
+                pred_boxes[..., :4].view(num_samples, -1, 4) * self.stride,
+                pred_boxes[..., 4:].view(num_samples, -1, 2),
                 pred_conf.view(num_samples, -1, 1),
                 pred_cls.view(num_samples, -1, self.num_classes),
             ),
             -1,
         )
+
         if targets is None:
             return output, 0
         else:
-            iou_scores, class_mask, mask, nomask, tx, ty, tw, th, tim, tre, tcls, tconf = build_targets(
-                pred_boxes=bboxes,
+            iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tim, tre, tcls, tconf = build_targets(
+                pred_boxes=pred_boxes,
                 pred_cls=pred_cls,
                 target=targets,
                 anchors=self.scaled_anchors,
                 ignore_thres=self.ignore_thres,
             )
 
-            loss_x = self.mse_loss(x[mask], tx[mask])
-            loss_y = self.mse_loss(y[mask], ty[mask])
-            loss_w = self.mse_loss(w[mask], tw[mask])
-            loss_h = self.mse_loss(h[mask], th[mask])
-            loss_im = self.mse_loss(imagin[mask], tim[mask])
-            loss_re = self.mse_loss(real[mask], tre[mask])
-            loss_e = loss_im + loss_re
-            loss_conf = self.bce_loss(pred_conf[mask], tconf[mask])
-            loss_noobj = self.bce_loss(pred_conf[nomask], tconf[nomask])
-            loss_conf = self.obj_scale * loss_conf + self.noobj_scale * loss_noobj
-            loss_cls = self.bce_loss(pred_cls[mask], tcls[mask])
-            total_loss = loss_x + loss_y + loss_w + loss_h + loss_e + loss_conf + loss_cls
+            # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
+            loss_x = self.mse_loss(x[obj_mask], tx[obj_mask])
+            loss_y = self.mse_loss(y[obj_mask], ty[obj_mask])
+            loss_w = self.mse_loss(w[obj_mask], tw[obj_mask])
+            loss_h = self.mse_loss(h[obj_mask], th[obj_mask])
+            loss_im = self.mse_loss(im[obj_mask], tim[obj_mask])
+            loss_re = self.mse_loss(re[obj_mask], tre[obj_mask])
+            loss_eular = loss_im + loss_re
+            loss_conf_obj = self.bce_loss(pred_conf[obj_mask], tconf[obj_mask])
+            loss_conf_noobj = self.bce_loss(pred_conf[noobj_mask], tconf[noobj_mask])
+            loss_conf = self.obj_scale * loss_conf_obj + self.noobj_scale * loss_conf_noobj
+            loss_cls = self.bce_loss(pred_cls[obj_mask], tcls[obj_mask])
+            total_loss = loss_x + loss_y + loss_w + loss_h + loss_eular + loss_conf + loss_cls
 
+            # # Metrics
+            # cls_acc = 100 * class_mask[obj_mask].mean()
+            # conf_obj = pred_conf[obj_mask].mean()
+            # conf_noobj = pred_conf[noobj_mask].mean()
+            # conf50 = (pred_conf > 0.5).float()
+            # iou50 = (iou_scores > 0.5).float()
+            # iou75 = (iou_scores > 0.75).float()
+            # detected_mask = conf50 * class_mask * tconf
+            # precision = torch.sum(iou50 * detected_mask) / (conf50.sum() + 1e-16)
+            # recall50 = torch.sum(iou50 * detected_mask) / (obj_mask.sum() + 1e-16)
+            # recall75 = torch.sum(iou75 * detected_mask) / (obj_mask.sum() + 1e-16)
 
+            # Compute class accuracy
             class_scores = pred_conf * class_mask
-            cls_acc = 100 * torch.sum(class_scores[mask]) / torch.sum(class_mask[mask])
+            cls_acc = 100 * torch.sum(class_scores[obj_mask]) / torch.sum(class_mask[obj_mask])
 
-            conf_obj = torch.mean(pred_conf[mask])
-            conf_noobj = torch.mean(pred_conf[nomask])
+            # Compute confidence scores
+            conf_obj = torch.mean(pred_conf[obj_mask])
+            conf_noobj = torch.mean(pred_conf[noobj_mask])
 
+            # Compute precision and recall scores
             conf50 = (pred_conf > 0.5)
             iou50 = (iou_scores > 0.5)
             iou75 = (iou_scores > 0.75)
             detected_mask = (conf50 * class_mask * tconf).bool()
             precision = torch.sum(iou50.float() * detected_mask) / (torch.sum(conf50) + 1e-16)
-            recall50 = torch.sum(iou50.float() * detected_mask) / (torch.sum(mask) + 1e-16)
-            recall75 = torch.sum(iou75.float() * detected_mask) / (torch.sum(mask) + 1e-16)
+            recall50 = torch.sum(iou50.float() * detected_mask) / (torch.sum(obj_mask) + 1e-16)
+            recall75 = torch.sum(iou75.float() * detected_mask) / (torch.sum(obj_mask) + 1e-16)
 
             self.metrics = {
                 "loss": (total_loss).detach().cpu().item(),
@@ -205,23 +219,22 @@ class COMPLEXYOLO(nn.Module):
 
     def __init__(self, config_path, img_size=416):
         super(COMPLEXYOLO, self).__init__()
-
         file = open(config_path, 'r')
         lines = file.read().split('\n')
-        lines = [x for x in lines if x and not x.startswith('#')] #making sure to not include comments of the config file
-        lines = [x.rstrip().lstrip() for x in lines] 
-        config = []
+        lines = [x for x in lines if x and not x.startswith('#')]
+        lines = [x.rstrip().lstrip() for x in lines] # get rid of fringe whitespaces
+        module_defs = []
         for line in lines:
-            if line.startswith('['): 
-                config.append({})
-                config[-1]['type'] = line[1:-1].rstrip()
-                if config[-1]['type'] == 'convolutional':
-                    config[-1]['batch_normalize'] = 0
+            if line.startswith('['): # This marks the start of a new block
+                module_defs.append({})
+                module_defs[-1]['type'] = line[1:-1].rstrip()
+                if module_defs[-1]['type'] == 'convolutional':
+                    module_defs[-1]['batch_normalize'] = 0
             else:
                 key, value = line.split("=")
                 value = value.strip()
-                config[-1][key.rstrip()] = value.strip()
-        self.config = config
+                module_defs[-1][key.rstrip()] = value.strip()
+        self.config = module_defs
         self.hyperparams, self.module_list = create_modules(self.config)
         self.yolo_layers = [layer[0] for layer in self.module_list if hasattr(layer[0], "metrics")]
         self.img_size = img_size
@@ -231,20 +244,20 @@ class COMPLEXYOLO(nn.Module):
     def forward(self, x, targets=None):
         img_dim = x.shape[2]
         loss = 0
-        layer_output =  []
-        yolo_output = []
+        layer_outputs, yolo_outputs = [], []
         for i, (c, module) in enumerate(zip(self.config, self.module_list)):
             if c["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             elif c["type"] == "route":
-                x = torch.cat([layer_output[int(layer_i)] for layer_i in c["layers"].split(",")], 1)
+                x = torch.cat([layer_outputs[int(layer_i)] for layer_i in c["layers"].split(",")], 1)
             elif c["type"] == "shortcut":
                 layer_i = int(c["from"])
-                x = layer_output[-1] + layer_output[layer_i]
+                x = layer_outputs[-1] + layer_outputs[layer_i]
             elif c["type"] == "yolo":
                 x, layer_loss = module[0](x, targets, img_dim)
                 loss += layer_loss
-                yolo_output.append(x)
-            layer_output.append(x)
-        yolo_output = (torch.cat(yolo_output, 1)).detach().cpu()
-        return yolo_output if targets is None else (loss, yolo_output)
+                yolo_outputs.append(x)
+            layer_outputs.append(x)
+        yolo_outputs = (torch.cat(yolo_outputs, 1)).detach().cpu()
+        return yolo_outputs if targets is None else (loss, yolo_outputs)
+
