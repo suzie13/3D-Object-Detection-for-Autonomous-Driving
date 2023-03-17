@@ -107,14 +107,13 @@ def non_max_suppression_rotated_bbox(prediction, conf_thres=0.95, nms_thres=0.4)
 
     output = [None for _ in range(len(prediction))]
     for image_i, image_pred in enumerate(prediction):
-        # Filter out confidence scores below threshold
+        #keep images only above a confidence threshold 
         image_pred = image_pred[image_pred[:, 6] >= conf_thres]
-        # If none are remaining => process next image
         if not image_pred.size(0):
             continue
         # Object confidence times class confidence
         score = image_pred[:, 6] * image_pred[:, 7:].max(1)[0]
-        # Sort by it
+        # Sorting
         image_pred = image_pred[(-score).argsort()]
         class_confs, class_preds = image_pred[:, 7:].max(1, keepdim=True)
         detections = torch.cat((image_pred[:, :7].float(), class_confs.float(), class_preds.float()), 1)
@@ -124,7 +123,7 @@ def non_max_suppression_rotated_bbox(prediction, conf_thres=0.95, nms_thres=0.4)
             large_overlap = rotated_bbox_iou_polygon(detections[0, :6], detections[:, :6]) > nms_thres
             large_overlap = torch.from_numpy(large_overlap)
             label_match = detections[0, -1] == detections[:, -1]
-            # Indices of boxes with lower confidence scores, large IOUs and matching labels
+
             invalid = large_overlap & label_match
             weights = detections[invalid, 6:7]
             # Merge overlapping bboxes by order of confidence
@@ -202,7 +201,7 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
         bbox2 = box2_new[i].view(-1, 6)
 
         iou = rotated_bbox_iou_polygon(bbox1, bbox2).squeeze()
-        ious.append(iou)
+        ious.append(iou) 
 
     ious = np.array(ious)
 
@@ -214,7 +213,7 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
 
 
 def removePoints(PointCloud, BoundaryCond):
-    # Boundary condition
+    """Remove outlier point cloud points"""
     minX = BoundaryCond['minX']
     maxX = BoundaryCond['maxX']
     minY = BoundaryCond['minY']
@@ -232,20 +231,20 @@ def removePoints(PointCloud, BoundaryCond):
     return PointCloud
 
 def makeBVFeature(PointCloud_, Discretization, bc):
-
+    """Point Cloud processing to get bird's eye view feature map (RGB image)"""
     Height = 608 + 1
     Width = 608 + 1
 
-    # Discretize Feature Map
+    # Discretization
     PointCloud = np.copy(PointCloud_)
     PointCloud[:, 0] = np.int_(np.floor(PointCloud[:, 0] / Discretization))
     PointCloud[:, 1] = np.int_(np.floor(PointCloud[:, 1] / Discretization) + Width / 2)
 
-    # sort-3times
+    #sorting in x, y (x and y sorting in increasing) and z (z sorting in decreasing i.e top to bottom)
     indices = np.lexsort((-PointCloud[:, 2], PointCloud[:, 1], PointCloud[:, 0]))
     PointCloud = PointCloud[indices]
 
-    # Height Map
+    # Height Map -> represented by green channel
     heightMap = np.zeros((Height, Width))
 
     _, indices = np.unique(PointCloud[:, 0:2], axis=0, return_index=True)
@@ -253,8 +252,9 @@ def makeBVFeature(PointCloud_, Discretization, bc):
     max_height = float(np.abs(bc['maxZ'] - bc['minZ']))
     heightMap[np.int_(PointCloud_frac[:, 0]), np.int_(PointCloud_frac[:, 1])] = PointCloud_frac[:, 2] / max_height
 
-    # Intensity Map & DensityMap
+    # Intensity Map ->represented by blue channel
     intensityMap = np.zeros((Height, Width))
+    # Density Map -> represented by red channel
     densityMap = np.zeros((Height, Width))
 
     _, indices, cnt = np.unique(PointCloud[:, 0:2], axis=0, return_index=True, return_cnt=True)
@@ -287,7 +287,6 @@ def bev_labels(objects):
         bbox_selected = np.array(bbox_selected).astype(np.float32)
         return bbox_selected, False
 
-# bev image coordinates format
 def get_corners(x, y, w, l, yaw):
     bev_corners = np.zeros((4, 2), dtype=np.float32)
 
@@ -322,10 +321,10 @@ def build_target(labels):
 
         yaw = np.pi * 2 - yaw
         if (x > bc["minX"]) and (x < bc["maxX"]) and (y > bc["minY"]) and (y < bc["maxY"]):
-            y1 = (y - bc["minY"]) / (bc["maxY"]-bc["minY"])
+            y1 = (y - bc["minY"])/(bc["maxY"]-bc["minY"])
             x1 = (x - bc["minX"]) / (bc["maxX"]-bc["minX"])
-            w1 = w / (bc["maxY"] - bc["minY"])
-            l1 = l / (bc["maxX"] - bc["minX"])
+            w1 = w/(bc["maxY"] - bc["minY"])
+            l1 = l/(bc["maxX"] - bc["minX"])
 
             target[index][0] = cl
             target[index][1] = y1 
@@ -358,19 +357,25 @@ def camsensor_lidarsensor(x, y, z, V2C=None,R0=None,P2=None):
 	return val
 
 def lidarsensor_camsensor(x, y, z,V2C=None, R0=None, P2=None):
+    """ 
+    P2->projection matrix for 3D to 2D (4,4)
+    R0->rotation matrix representing sensor orientation relative to world (4,4)
+    V2C->velodyne to camera transformation matrix (4,4)
+    """
 	p = np.array([x, y, z, 1])
 	if V2C is None or R0 is None:
+        # point already in camera coordinates therefore Tr_vel_to_cam used to transform to camera coordinates
 		p = np.matmul(Tr_velo_to_cam, p)
 		p = np.matmul(R0, p)
 	else:
+        # transform p point from lidar to camera coordinates
 		p = np.matmul(V2C, p)
 		p = np.matmul(R0, p)
 	p = p[0:3]
 	return tuple(p)
 
 def camcoord_lidarcoord(points):
-	# print("shapeee", points.shape)
-	# N = points.shape[0]
+    """coordinates from camera coordinate system to lidar coordinate system"""
 	points = np.hstack([points, np.ones((len(points), 1))]).T
 
 	points = np.matmul(R0_inv, points)
@@ -380,7 +385,9 @@ def camcoord_lidarcoord(points):
 	return res
 
 def lidarcoord_camcoord(points, V2C=None, R0=None):
+    """coordinates from lidar coordinate system to camera coordinate system"""
 	N = points.shape[0]
+    #Rotation from lidar to camera
 	R0 = np.array([
 		[0.99992475, 0.00975976, -0.00734152, 0],
 		[-0.0097913, 0.99994262, -0.00430371, 0],
@@ -400,6 +407,7 @@ def lidarcoord_camcoord(points, V2C=None, R0=None):
 	return res
 
 def cam_lidar_bbox(boxes, V2C=None, R0=None, P2=None):
+    """ transformation of bounding box coordinates from camera frame to lidar frame"""
 	ret = []
 	for box in boxes:
 		x, y, z, h, w, l, ry = box
@@ -409,13 +417,15 @@ def cam_lidar_bbox(boxes, V2C=None, R0=None, P2=None):
 	return np.array(ret).reshape(-1, 7)
 
 def lidar_camera_bbox(boxes,V2C=None, R0=None, P2=None):
+    """transformation of bounding box coordinates from lidar frame to sensor frame"""
 	ret = []
 	for box in boxes:
-		x, y, z, h, w, l, rz = box
+	x, y, z, h, w, l, rz = box
+        #(x, y, z) -> transformed center coordinates of box in the camera coordinate system
 		(x, y, z), h, w, l, ry = lidarsensor_camsensor(
 			x, y, z,V2C=V2C, R0=R0, P2=P2), h, w, l, -rz - np.pi / 2
 		ret.append([x, y, z, h, w, l, ry])
-	return np.array(ret).reshape(-1, 7)
+	return np.array(ret).reshape(-1, 7)	
 
 
 def center_to_corner_box3d(boxes_center, coordinate='lidar'):
@@ -572,15 +582,3 @@ def point_transform(points, tx, ty, tz, rx=0, ry=0, rz=0):
 		points = np.matmul(points, mat)
 
 	return points[:, 0:3]
-
-def box_transform(boxes, tx, ty, tz, r=0, coordinate='lidar'):##for augmentation only
-
-	boxes_corner = center_to_corner_box3d(boxes, coordinate=coordinate) 
-	for i in range(len(boxes_corner)):
-		if coordinate == 'lidar':
-			boxes_corner[i] = point_transform(boxes_corner[i], tx, ty, tz, rz=r)
-		else:
-			boxes_corner[i] = point_transform(boxes_corner[i], tx, ty, tz, ry=r)
-	result = corner_to_center_box3d(boxes_corner, coordinate=coordinate)
-	return result
-
