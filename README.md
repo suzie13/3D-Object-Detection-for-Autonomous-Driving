@@ -2,6 +2,35 @@
 
 DATASET used:
 Kitti Dataset
+The Kitti dataset consists of:
+    calib folder: This contains the caliberation files for cmaera and velodyne sensor.
+
+    image_2 folder: contains rgb images from left camera.
+
+    label_2 folder: contains ground truth annotations for detection and tracking.
+
+    velodyne folder: contains the velodyne LIDAR point cloud in bin files.
+
+Each file of label_2 has 15 columns ->
+
+column 0 = classes (car, pedestrian, van, truck, cycle, tram, person sitting, misc, don't care)
+
+column 1 = Truncation (float value from 0 to 1 where 0 is fully visible and 1 is fully truncated 
+            outside the image boundaries)(how much that object is visible in the image)
+
+column 2 = Occlussion (0 to 3 where 0 is not occluded and 3 is fully occluded by other objects 
+            in the scene)
+
+column 3 = Alpha (observation angle in radians from center of camera)
+
+column 4,5,6,7 = bounding box (2D bounding box coordinate i.e. x, y, w, h)
+
+column 8,9,10 = Dimensions (3D object dimensions i.e height, width, length (in meteres))
+
+column 11,12,13 = The center location x, y, z of the 3D object in camera coordinates (in meteres)
+
+column 14 = Rotation (ry) around Y-axis (vertical axis) in camera coordinates [-pi ..pi]
+
 
 https://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
 
@@ -15,7 +44,7 @@ To train the dataset:
 To test the trained model weight on test images:
 `python test.py`
 
-STEPS: \
+STEPS: 
 
     1) Data Collection: LIDAR->(3D point clouds) and camera data->(2D images) from same scene. 
 
