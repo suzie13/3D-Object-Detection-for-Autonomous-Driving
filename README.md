@@ -1,5 +1,11 @@
 3D Object Detection using complex-yolov3 model architecture in Pytorch
 
+
+3D Object-Detection 
+
+![front_tile_3D](https://user-images.githubusercontent.com/39700209/226108691-ea236f73-bea4-4852-ac90-24cb61b7f62b.gif)
+
+
 DATASET used:
 Kitti Dataset
 The Kitti dataset consists of:
@@ -12,25 +18,27 @@ The Kitti dataset consists of:
 
     velodyne folder: contains the velodyne LIDAR point cloud in bin files.
 
+
+
 Each file of label_2 has 15 columns ->
 
-column 0 = classes (car, pedestrian, van, truck, cycle, tram, person sitting, misc, don't care)
+    column 0 = classes (car, pedestrian, van, truck, cycle, tram, person sitting, misc, don't care)
 
-column 1 = Truncation (float value from 0 to 1 where 0 is fully visible and 1 is fully truncated 
-            outside the image boundaries)(how much that object is visible in the image)
+    column 1 = Truncation (float value from 0 to 1 where 0 is fully visible and 1 is fully truncated 
+                outside the image boundaries)(how much that object is visible in the image)
 
-column 2 = Occlussion (0 to 3 where 0 is not occluded and 3 is fully occluded by other objects 
-            in the scene)
+    column 2 = Occlussion (0 to 3 where 0 is not occluded and 3 is fully occluded by other objects 
+                in the scene)
 
-column 3 = Alpha (observation angle in radians from center of camera)
+    column 3 = Alpha (observation angle in radians from center of camera)
 
-column 4,5,6,7 = bounding box (2D bounding box coordinate i.e. x, y, w, h)
+    column 4,5,6,7 = bounding box (2D bounding box coordinate i.e. x, y, w, h)
 
-column 8,9,10 = Dimensions (3D object dimensions i.e height, width, length (in meteres))
+    column 8,9,10 = Dimensions (3D object dimensions i.e height, width, length (in meteres))
 
-column 11,12,13 = The center location x, y, z of the 3D object in camera coordinates (in meteres)
+    column 11,12,13 = The center location x, y, z of the 3D object in camera coordinates (in meteres)
 
-column 14 = Rotation (ry) around Y-axis (vertical axis) in camera coordinates [-pi ..pi]
+    column 14 = Rotation (ry) around Y-axis (vertical axis) in camera coordinates [-pi ..pi]
 
 
 https://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
