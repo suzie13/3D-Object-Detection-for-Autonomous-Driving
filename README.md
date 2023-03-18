@@ -6,7 +6,31 @@
 ![front_tile_3D](https://user-images.githubusercontent.com/39700209/226108691-ea236f73-bea4-4852-ac90-24cb61b7f62b.gif)
 
 
+
+
+
+Camera RGB image(left) and Lidar 2D image(right) side to side
+
+![side_to_side2](https://user-images.githubusercontent.com/39700209/226110047-b811844b-82dd-407e-bd62-10b65fef1cd7.png)
+
+![side_to_side3](https://user-images.githubusercontent.com/39700209/226110060-75691c0e-ddf4-4553-bd79-30618bcddc2f.png)
+
+![side_to_side4](https://user-images.githubusercontent.com/39700209/226110067-5f1547a6-1383-4db3-bd20-35c51bf393d5.png)
+
+![side_to_side5](https://user-images.githubusercontent.com/39700209/226110075-76b537fb-0112-4633-a36f-fba3d5c2bc83.png)
+
+
+The yellow bounding box on the 2D LIDAR image represents the Class of Car (index 0),
+red bounding box represents Pedestrian (index 1),
+blue bounding box represents Cyclist (index 2)
+
+The different colored (light blue) edge of the bounding box in 2D Lidar image represents 
+the front of the detected objected which is also the likely direction of the detected object to
+move in.
+
+
 DATASET used:
+
 Kitti Dataset
 The Kitti dataset consists of:
 
